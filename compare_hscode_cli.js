@@ -19,12 +19,20 @@ function searchHSCode(query, data, parsed, maxResults = 5, debug = false, defaul
     .map(item => {
       const desc = (item.description || '').toLowerCase();
       let score = 0;
-      if (desc === q) score = 3;
-      else if (desc.includes(q)) score = 2;
-      else if (tokens.some(word => desc.includes(word))) score = 1;
+      // List of generic/common words to penalize or ignore
+      const genericWords = ['systems', 'device', 'equipment', 'apparatus', 'parts', 'other', 'miscellaneous'];
+      // Exact match
+      if (desc === q) score = 5;
+      // Full query in description
+      else if (desc.includes(q)) score = 3;
+      // Token match, but penalize generic/common words
+      else if (tokens.some(word => desc.includes(word) && !genericWords.includes(word))) score = 2;
+      // Penalize if only generic/common words match
+      else if (tokens.some(word => desc.includes(word) && genericWords.includes(word))) score = 0;
       // Boost score if brand or category matches in description
       if (brand && desc.includes(brand)) score += 2;
       if (category && desc.includes(category.toLowerCase())) score += 1;
+      // Boost if related/definition keywords match (handled in fallback)
       // Always show duty, default if missing
       let duty = (item.duty !== undefined && item.duty !== null && item.duty !== '') ? item.duty : defaultDuty;
       return { ...item, score, duty, debug: { desc, tokens, brand, category } };
@@ -90,16 +98,28 @@ function main() {
   const uaeData = JSON.parse(fs.readFileSync(uaePath, 'utf8'));
   const usData = JSON.parse(fs.readFileSync(usPath, 'utf8'));
 
-  // If the query is a valid HS code (all digits, length 6-8), do direct lookup
-  const hsCodePattern = /^\d{6,8}$/;
+  // If the query is a valid HS code (all digits, length 6-10), do normalized lookup
+  const hsCodePattern = /^\d{6,10}$/;
   if (hsCodePattern.test(query)) {
-    const uaeMatch = uaeData.find(item => item.hs_code === query);
-    const usMatch = usData.find(item => item.hs_code === query);
+    // Normalize: match any code that starts with the query (for 6, 8, or 10 digits)
+    const normalize = code => code.replace(/\D/g, '');
+    const uaeMatch = uaeData.find(item => normalize(item.hs_code).startsWith(query));
+    const usMatch = usData.find(item => normalize(item.hs_code).startsWith(query));
     console.log(`\nHS Code Lookup: ${query}`);
     console.log('='.repeat(60));
     if (uaeMatch) {
       console.log(`[UAE] Description: ${uaeMatch.description}`);
       console.log(`[UAE] Duty: ${uaeMatch.duty || '5%'}`);
+    } else if (usMatch) {
+      // UAE not found, but US found: suggest using US code for UAE import
+      console.log('[UAE] Not found');
+      console.log('-'.repeat(60));
+      console.log(`[INFO] This HS code is available in the US:`);
+      console.log(`[US] Description: ${usMatch.description}`);
+      console.log(`[US] Duty: ${usMatch.duty || ''}`);
+      console.log('[SUGGESTION] You can use this US HS code for UAE import. This is a common practice when the UAE code is missing.');
+      console.log('='.repeat(60));
+      return;
     } else {
       console.log('[UAE] Not found');
     }
@@ -215,73 +235,93 @@ function main() {
   usResults = smartFilter(usResults);
 
   if (uaeResults.length === 0 && usResults.length === 0) {
-    console.log('No logical fallback HS code found for this brand/product.');
-    // Try related/synonym keywords for the product type/model
-    let relatedKeywords = [];
-    try {
-      const relatedMap = JSON.parse(fs.readFileSync(path.join(__dirname, 'related_keywords.json'), 'utf8'));
-      if (parsed.model && relatedMap[parsed.model]) {
-        relatedKeywords = relatedMap[parsed.model];
-      } else if (parsed.type && relatedMap[parsed.type]) {
-        relatedKeywords = relatedMap[parsed.type];
-      }
-    } catch (e) {}
-    if (relatedKeywords.length > 0) {
-      // Search for related keywords in the dataset
-      function relatedFilter(results) {
-        return results.filter(item => {
-          const desc = (item.description || '').toLowerCase();
-          return relatedKeywords.some(kw => desc.includes(kw));
-        });
-      }
-      let uaeRelated = relatedFilter(searchHSCode(query, uaeData, parsed, 20, false, '5%'));
-      let usRelated = relatedFilter(searchHSCode(query, usData, parsed, 20, false, ''));
-      if (uaeRelated.length > 0 || usRelated.length > 0) {
-        console.log('Closest alternative(s) based on related category/keywords:');
-        printComparison(query, parsed, uaeRelated.slice(0, 5), usRelated.slice(0, 5));
-        return;
-      }
-    }
-    // Try definition-based mapping for generic product types
-    let definitionKeywords = [];
-    try {
-      const defMap = JSON.parse(fs.readFileSync(path.join(__dirname, 'definition_map.json'), 'utf8'));
-      if (parsed.type && defMap[parsed.type]) {
-        definitionKeywords = defMap[parsed.type];
-      } else if (parsed.model && defMap[parsed.model]) {
-        definitionKeywords = defMap[parsed.model];
-      } else if (query && defMap[query.toLowerCase()]) {
-        definitionKeywords = defMap[query.toLowerCase()];
-      }
-    } catch (e) {}
-    if (definitionKeywords.length > 0) {
-      function defFilter(results) {
-        return results.filter(item => {
-          const desc = (item.description || '').toLowerCase();
-          return definitionKeywords.some(kw => desc.includes(kw));
-        });
-      }
-      let uaeDef = defFilter(searchHSCode(query, uaeData, parsed, 30, false, '5%'));
-      let usDef = defFilter(searchHSCode(query, usData, parsed, 30, false, ''));
-      // If UAE fallback is empty but US fallback is plausible, recommend US code
-      if (uaeDef.length === 0 && usDef.length > 0) {
-        console.log('No logical UAE HS code found. The US code(s) below are more valid and closer to reality for this product:');
-        printComparison(query, parsed, [], usDef.slice(0, 5));
-        console.log('Consider using the US code as a reference for your product.');
-        return;
-      }
-      // If both UAE and US codes are found, show both and recommend the more plausible one
-      if (uaeDef.length > 0 || usDef.length > 0) {
-        console.log('No direct match for this term. Based on definition, possible categories:');
-        printComparison(query, parsed, uaeDef.slice(0, 5), usDef.slice(0, 5));
-        if (usDef.length > 0 && (uaeDef.length === 0 || usDef[0].score > (uaeDef[0]?.score || 0))) {
-          console.log('The US code(s) may be more valid for this product.');
-        }
-        console.log('Please refine your search (e.g., more specific product type or material).');
-        return;
-      }
-    }
-    return;
+  console.log('No logical fallback HS code found for this brand/product.');
+  // Suggest specific, real-world product types for common generic queries
+  const smartSuggestions = {
+  radio: [
+  'PTT radio', 'VHF radio', 'UHF radio', 'walkie-talkie', 'radio hardware', 'marine radio', 'aviation radio', 'broadcast radio', 'handheld radio', 'base station radio'
+  ],
+  cloths: [
+  'tablecloth', 't-shirt', 'robe', 'dress', 'towel', 'napkin', 'blanket', 'scarf', 'apron', 'handkerchief'
+  ],
+  chair: [
+  'office chair', 'dining chair', 'gaming chair', 'IKEA chair', 'folding chair', 'wheelchair', 'bar stool', 'recliner', 'armchair', 'child seat'
+  ]
+  };
+  const q = query.toLowerCase();
+  if (smartSuggestions[q]) {
+  console.log('\n[SMART SUGGESTIONS] Your search is generic. Here are some specific product types you can try:');
+  smartSuggestions[q].forEach(s => console.log('  -', s));
+  console.log('\nTry searching for one of these specific product types to get more accurate HS code results.');
+  }
+  // Try related/synonym keywords for the product type/model
+  let relatedKeywords = [];
+  try {
+  const relatedMap = JSON.parse(fs.readFileSync(path.join(__dirname, 'related_keywords.json'), 'utf8'));
+  if (parsed.model && relatedMap[parsed.model]) {
+  relatedKeywords = relatedMap[parsed.model];
+  } else if (parsed.type && relatedMap[parsed.type]) {
+  relatedKeywords = relatedMap[parsed.type];
+  }
+  } catch (e) {}
+  if (relatedKeywords.length > 0) {
+  // Search for related keywords in the dataset
+  function relatedFilter(results) {
+  return results.filter(item => {
+  const desc = (item.description || '').toLowerCase();
+  return relatedKeywords.some(kw => desc.includes(kw));
+  });
+  }
+  let uaeRelated = relatedFilter(searchHSCode(query, uaeData, parsed, 20, false, '5%'));
+  let usRelated = relatedFilter(searchHSCode(query, usData, parsed, 20, false, ''));
+  if (uaeRelated.length > 0 || usRelated.length > 0) {
+  console.log('Closest alternative(s) based on related category/keywords:');
+  printComparison(query, parsed, uaeRelated.slice(0, 5), usRelated.slice(0, 5));
+  return;
+  }
+  }
+  // Try definition-based mapping for generic product types
+  let definitionKeywords = [];
+  try {
+  const defMap = JSON.parse(fs.readFileSync(path.join(__dirname, 'definition_map.json'), 'utf8'));
+  if (parsed.type && defMap[parsed.type]) {
+  definitionKeywords = defMap[parsed.type];
+  } else if (parsed.model && defMap[parsed.model]) {
+  definitionKeywords = defMap[parsed.model];
+  } else if (query && defMap[query.toLowerCase()]) {
+  definitionKeywords = defMap[query.toLowerCase()];
+  }
+  } catch (e) {}
+  if (definitionKeywords.length > 0) {
+  function defFilter(results) {
+  return results.filter(item => {
+  const desc = (item.description || '').toLowerCase();
+  return definitionKeywords.some(kw => desc.includes(kw));
+  });
+  }
+  let uaeDef = defFilter(searchHSCode(query, uaeData, parsed, 30, false, '5%'));
+  let usDef = defFilter(searchHSCode(query, usData, parsed, 30, false, ''));
+  // If UAE fallback is empty but US fallback is plausible, recommend US code
+  if (uaeDef.length === 0 && usDef.length > 0) {
+  console.log('No logical UAE HS code found. The US code(s) below are more valid and closer to reality for this product:');
+  printComparison(query, parsed, [], usDef.slice(0, 5));
+  console.log('Consider using the US code as a reference for your product.');
+  return;
+  }
+  // If both UAE and US codes are found, show both and recommend the more plausible one
+  if (uaeDef.length > 0 || usDef.length > 0) {
+  console.log('No direct match for this term. Based on definition, possible categories:');
+  printComparison(query, parsed, uaeDef.slice(0, 5), usDef.slice(0, 5));
+  if (usDef.length > 0 && (uaeDef.length === 0 || usDef[0].score > (uaeDef[0]?.score || 0))) {
+  console.log('The US code(s) may be more valid for this product.');
+  }
+  console.log('Please refine your search (e.g., more specific product type or material).');
+  return;
+  }
+  }
+  // Encourage multilingual queries
+  console.log('\n[INFO] You can also write your search in French or another language if you are not fluent in English. The tool will try to understand and help you.');
+  return;
   }
 
   printComparison(query, parsed, uaeResults, usResults);

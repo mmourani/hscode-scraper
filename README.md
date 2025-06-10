@@ -6,9 +6,11 @@ This project provides a CLI-based tool for searching and comparing Harmonized Sy
 ## Current Features
 - **Intelligence-based brand/product HS code matching**: Uses a structured knowledge base to map brands (e.g., Quantum Systems, Silvus) and their products to the correct HS codes for multiple countries.
 - **Smart fallback and related keyword logic**: If no direct match is found, the tool suggests the closest alternative HS codes using synonyms and related product categories (e.g., for "drone": "UAV", "unmanned", "aircraft").
-- **Definition-based fallback**: For generic terms (e.g., "cloths", "chair"), the tool uses a mapping of product types to broader categories (e.g., "cloths" ��� "textile", "fabric", "apparel") and suggests plausible HS code categories, prompting the user to refine their search.
-- **Cross-country code recommendation**: If no logical UAE code is found, the tool searches the US dataset and recommends the US code if it is more valid and closer to reality for the product.
-- **Direct HS code lookup**: Enter an HS code to get the official description and duty from both UAE and US datasets.
+- **Definition-based fallback**: For generic terms (e.g., "cloths", "chair"), the tool uses a mapping of product types to broader categories (e.g., "cloths" → "textile", "fabric", "apparel") and suggests plausible HS code categories, prompting the user to refine their search.
+- **Cross-country code recommendation**: If no logical UAE code is found, the tool searches the US dataset and recommends the US code if it is more valid and closer to reality for the product. The tool will clearly show the code and description from any available country and suggest using it for UAE import if missing.
+- **Smart fallback suggestions for generic queries**: For generic terms (like "radio", "cloths", "chair"), the tool provides a list of specific, real-world product types (e.g., "PTT radio", "VHF radio", "t-shirt", "office chair") to help refine the search and find the most relevant HS code.
+- **Multilingual support**: Users can write their search in French or another language if they are not fluent in English. The tool will try to understand and help.
+- **Direct HS code lookup**: Enter an HS code to get the official description and duty from both UAE and US datasets, with normalization for code length (6, 8, or 10 digits).
 - **UAE HS code extraction** from Sharjah Customs PDF (hs_codes_uae.json)
 - **US HS code extraction** from USITC CSV (hs_codes_us.json)
 - **CLI tools** for searching and comparing HS codes and duties
@@ -52,11 +54,13 @@ This project provides a CLI-based tool for searching and comparing Harmonized Sy
 
 ## Plan & Next Steps
 - **Expand brand intelligence:** Add more brands, products, and HS code mappings to `brand_products.json`.
-- **Enhance related keyword and definition mapping:** Add more synonyms, related categories, and definitions to `related_keywords.json` and `definition_map.json` for smarter fallback.
+- **Enhance related keyword and definition mapping:** Add more synonyms, related categories, and definitions to `related_keywords.json` and `definition_map.json` for smarter fallback and more specific suggestions for generic queries.
+- **Expand multilingual support:** Add more language mappings and improve detection for non-English queries.
 - **International HS code mapping:** Integrate official correlation tables for more accurate cross-country code suggestions (including EU dataset).
 - **Web interface:** Build a user-friendly web app for search and comparison.
 - **Datasheet/product scraping:** (Optional) Integrate datasheet or product scraping for even more accurate matching.
 - **Testing and validation:** Continue to test with real-world queries and edge cases, and refine the intelligence and fallback logic.
+- **Community feedback:** Encourage users to suggest new product types, languages, and improvements via GitHub issues or pull requests.
 
 ## How to Contribute
 - Fork the repo, create a branch, and submit a pull request.
