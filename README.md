@@ -1,7 +1,19 @@
 # HS Code Lookup & Tariff Comparison Tool
 
 ## Project Overview
-This project provides a CLI-based tool for searching and comparing Harmonized System (HS) codes and import duties between the UAE and the US. It is designed to help importers/exporters, customs brokers, and researchers quickly identify the correct HS code and tariff for a given product in both countries.
+This project provides a CLI-based tool for searching and comparing Harmonized System (HS) codes, import/export duties, and trade requirements between the UAE, US, China, and EU. It is designed to help importers/exporters, customs brokers, and researchers quickly identify the correct HS code, tariff, and all relevant import/export rules for a given product in multiple countries.
+
+---
+
+## Development Status (June 2024)
+
+- **China HS code scraper**: Fully automated, supports batch/resume, extracts all customs/CIQ requirements and rich detail. (Run multiple times to complete full import.)
+- **US, UAE, EU importers**: Basic data imported; enrichment to China-level detail is planned.
+- **Database**: Supports rich/nested data for customs/CIQ requirements and extra info per HS code.
+- **CLI tools**: Brand/product-aware search, direct code lookup, and cross-country fallback logic.
+- **Next steps**: See below for roadmap and action items.
+
+---
 
 ## Current Features
 - **Intelligence-based brand/product HS code matching**: Uses a structured knowledge base to map brands (e.g., Quantum Systems, Silvus) and their products to the correct HS codes for multiple countries.
@@ -52,15 +64,41 @@ This project provides a CLI-based tool for searching and comparing Harmonized Sy
 - If no logical UAE code is found, the tool searches the US dataset and recommends the US code if it is more valid and closer to reality for the product.
 - If no plausible code is found, the tool outputs a clear message and does not show irrelevant results.
 
-## Plan & Next Steps
+## Roadmap & Next Steps
+
+### Immediate Action Items
+- **Complete China HS code import:**
+  - Run the batch/resume scraper until all chapters and codes are imported.
+- **Enrich EU, US, and UAE data:**
+  - Research and scrape official customs/export/import rules for EU, US, and UAE to match the detail level of China (customs clearance, CIQ, export/import rules, etc.).
+  - Update scrapers/importers and database to store this information in a structured way.
+- **Enable cross-border trade rule queries:**
+  - Build logic to answer: “What are the export rules for [product/brand] from [country] to [country]?”
+  - Use brand_products.json and related mappings to link products/brands to HS codes and aggregate all export/import requirements for both origin and destination.
+- **Web interface:**
+  - Plan and begin migration to a user-friendly web app for search and comparison.
+
+### Ongoing/Planned
 - **Expand brand intelligence:** Add more brands, products, and HS code mappings to `brand_products.json`.
 - **Enhance related keyword and definition mapping:** Add more synonyms, related categories, and definitions to `related_keywords.json` and `definition_map.json` for smarter fallback and more specific suggestions for generic queries.
 - **Expand multilingual support:** Add more language mappings and improve detection for non-English queries.
 - **International HS code mapping:** Integrate official correlation tables for more accurate cross-country code suggestions (including EU dataset).
-- **Web interface:** Build a user-friendly web app for search and comparison.
 - **Datasheet/product scraping:** (Optional) Integrate datasheet or product scraping for even more accurate matching.
 - **Testing and validation:** Continue to test with real-world queries and edge cases, and refine the intelligence and fallback logic.
 - **Community feedback:** Encourage users to suggest new product types, languages, and improvements via GitHub issues or pull requests.
+
+---
+
+## Action Checklist
+- [x] Batch/resume China HS code scraper
+- [x] Rich database schema for customs/CIQ/extra info
+- [x] Importers for US, UAE, EU, China
+- [ ] Complete China import (run scraper to finish)
+- [ ] Enrich EU, US, UAE data to China-level detail
+- [ ] Build cross-border trade rule query logic
+- [ ] Web app interface (planned)
+
+---
 
 ## How to Contribute
 - Fork the repo, create a branch, and submit a pull request.
