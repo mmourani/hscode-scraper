@@ -183,8 +183,26 @@ function main() {
   }
 
   function smartFilter(results) {
-    if (fallbackKeywords.length === 0) return results;
-    // Only keep results whose description contains at least one relevant keyword
+    if (fallbackKeywords.length === 0) return [];
+    // Only keep results whose description contains a high-priority related term (not just any keyword)
+    // Use related_keywords.json for strict fallback
+    let relatedKeywords = [];
+    try {
+      const relatedMap = JSON.parse(fs.readFileSync(path.join(__dirname, 'related_keywords.json'), 'utf8'));
+      if (parsed.model && relatedMap[parsed.model]) {
+        relatedKeywords = relatedMap[parsed.model];
+      } else if (parsed.type && relatedMap[parsed.type]) {
+        relatedKeywords = relatedMap[parsed.type];
+      }
+    } catch (e) {}
+    // If we have related keywords, require at least one of them to be present
+    if (relatedKeywords.length > 0) {
+      return results.filter(item => {
+        const desc = (item.description || '').toLowerCase();
+        return relatedKeywords.some(kw => desc.includes(kw));
+      });
+    }
+    // Otherwise, fallback to original fallbackKeywords
     return results.filter(item => {
       const desc = (item.description || '').toLowerCase();
       return fallbackKeywords.some(kw => desc.includes(kw));
@@ -221,6 +239,45 @@ function main() {
       if (uaeRelated.length > 0 || usRelated.length > 0) {
         console.log('Closest alternative(s) based on related category/keywords:');
         printComparison(query, parsed, uaeRelated.slice(0, 5), usRelated.slice(0, 5));
+        return;
+      }
+    }
+    // Try definition-based mapping for generic product types
+    let definitionKeywords = [];
+    try {
+      const defMap = JSON.parse(fs.readFileSync(path.join(__dirname, 'definition_map.json'), 'utf8'));
+      if (parsed.type && defMap[parsed.type]) {
+        definitionKeywords = defMap[parsed.type];
+      } else if (parsed.model && defMap[parsed.model]) {
+        definitionKeywords = defMap[parsed.model];
+      } else if (query && defMap[query.toLowerCase()]) {
+        definitionKeywords = defMap[query.toLowerCase()];
+      }
+    } catch (e) {}
+    if (definitionKeywords.length > 0) {
+      function defFilter(results) {
+        return results.filter(item => {
+          const desc = (item.description || '').toLowerCase();
+          return definitionKeywords.some(kw => desc.includes(kw));
+        });
+      }
+      let uaeDef = defFilter(searchHSCode(query, uaeData, parsed, 30, false, '5%'));
+      let usDef = defFilter(searchHSCode(query, usData, parsed, 30, false, ''));
+      // If UAE fallback is empty but US fallback is plausible, recommend US code
+      if (uaeDef.length === 0 && usDef.length > 0) {
+        console.log('No logical UAE HS code found. The US code(s) below are more valid and closer to reality for this product:');
+        printComparison(query, parsed, [], usDef.slice(0, 5));
+        console.log('Consider using the US code as a reference for your product.');
+        return;
+      }
+      // If both UAE and US codes are found, show both and recommend the more plausible one
+      if (uaeDef.length > 0 || usDef.length > 0) {
+        console.log('No direct match for this term. Based on definition, possible categories:');
+        printComparison(query, parsed, uaeDef.slice(0, 5), usDef.slice(0, 5));
+        if (usDef.length > 0 && (uaeDef.length === 0 || usDef[0].score > (uaeDef[0]?.score || 0))) {
+          console.log('The US code(s) may be more valid for this product.');
+        }
+        console.log('Please refine your search (e.g., more specific product type or material).');
         return;
       }
     }
