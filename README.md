@@ -1,66 +1,42 @@
-# Dubai Customs HS Code Scraper
+# HS Code Lookup & Tariff Comparison Tool
 
-A Node.js script using Playwright to scrape HS code data from the Dubai Customs website. The script automates data extraction, handles pagination, and saves results to a JSON file. Manual CAPTCHA solving is required.
+## Project Overview
+This project provides a CLI-based tool for searching and comparing Harmonized System (HS) codes and import duties between the UAE and the US. It is designed to help importers/exporters, customs brokers, and researchers quickly identify the correct HS code and tariff for a given product in both countries.
 
----
-
-## Features
-- Automated scraping of HS codes, short and long descriptions
-- Handles pagination and errors robustly
-- Saves results to a JSON file
-- Progress persistence and resume support (planned)
-- Configurable via CLI and config file (planned)
-- Structured logging (planned)
-
----
-
-## Setup
-
-1. **Clone the repository:**
-   ```sh
-   git clone https://github.com/yourusername/hscode-scraper.git
-   cd hscode-scraper
-   ```
-2. **Install dependencies:**
-   ```sh
-   npm install
-   ```
-3. **Install Playwright browsers:**
-   ```sh
-   npx playwright install
-   ```
-
----
+## Current Features
+- **UAE HS code extraction** from Sharjah Customs PDF (hs_codes_uae.json)
+- **US HS code extraction** from USITC CSV (hs_codes_us.json)
+- **CLI tools** for searching and comparing HS codes and duties
+- **Debug/verbose mode** for search logic validation
+- **Scripts for data extraction** from both PDF and CSV sources
 
 ## Usage
+### 1. Extract Data
+- UAE: `node extract_hs_pdf.js` (requires HS Code.pdf)
+- US: `node extract_us_hts_csv.js` (requires hts_2024_basic_edition_csv.csv`)
 
-Run the scraper:
-```sh
-node scrape-hscodes.js
-```
+### 2. Search & Compare
+- Compare HS codes and duties:
+  ```sh
+  node compare_hscode_cli.js <search terms> [--debug]
+  ```
+  Example:
+  ```sh
+  node compare_hscode_cli.js radio --debug
+  ```
 
-- The browser will open. Manually solve the CAPTCHA and submit the search.
-- Press ENTER in the terminal when the first page is fully loaded.
-- The script will scrape all pages and save results to `uae_hscodes_full.json`.
+## What’s Next
+- **Product/brand-aware search:** Parse queries for brand/model/type, identify country of origin, and match to the closest HS code in both countries.
+- **Country of origin lookup:** Static map or web search for brand origin.
+- **Datasheet integration:** (Optional) Scrape or fetch product datasheets for more accurate matching.
+- **Customs/tariff calculator:** Estimate UAE customs fees based on duty and declared value.
+- **Multi-country expansion:** Add EU/other country HS code/tariff datasets.
+- **Web interface:** Build a user-friendly web app for search and comparison.
+- **Testing and validation:** More real-world queries and edge cases.
 
-### Planned CLI Options
-- `--output <file>`: Specify output file name
-- `--headless`: Run browser in headless mode
-- `--start-page <n>`: Resume from a specific page
-
----
-
-## Troubleshooting
-- If the script fails, check `debug.html` for the last page state.
-- Ensure you have a stable internet connection.
-- For Playwright issues, see [Playwright docs](https://playwright.dev/).
-
----
-
-## Contributing
-Pull requests are welcome! For major changes, please open an issue first to discuss what you would like to change.
-
----
+## How to Contribute
+- Fork the repo, create a branch, and submit a pull request.
+- Open issues for bugs, feature requests, or data updates.
 
 ## License
 MIT
