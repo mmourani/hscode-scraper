@@ -1,0 +1,14 @@
+# Node modules
+node_modules/
+
+# Output and data files
+*.json
+*.jsonl
+*.log
+
+# Debug and temp files
+debug.html
+*.tmp
+
+# OS files
+.DS_Store
