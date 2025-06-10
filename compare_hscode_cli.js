@@ -1,9 +1,20 @@
 const fs = require('fs');
 const path = require('path');
+const { parseQuery } = require('./query_parser');
 
-function searchHSCode(query, data, maxResults = 5, debug = false) {
+// Load brand intelligence
+let brandProducts = {};
+try {
+  brandProducts = JSON.parse(fs.readFileSync(path.join(__dirname, 'brand_products.json'), 'utf8'));
+} catch (e) {
+  brandProducts = {};
+}
+
+function searchHSCode(query, data, parsed, maxResults = 5, debug = false, defaultDuty = null) {
   const q = query.toLowerCase();
   const tokens = q.split(/\s+/).filter(Boolean);
+  const brand = parsed.brand;
+  const category = parsed.category;
   const results = data
     .map(item => {
       const desc = (item.description || '').toLowerCase();
@@ -11,30 +22,41 @@ function searchHSCode(query, data, maxResults = 5, debug = false) {
       if (desc === q) score = 3;
       else if (desc.includes(q)) score = 2;
       else if (tokens.some(word => desc.includes(word))) score = 1;
-      return { ...item, score, debug: { desc, tokens } };
+      // Boost score if brand or category matches in description
+      if (brand && desc.includes(brand)) score += 2;
+      if (category && desc.includes(category.toLowerCase())) score += 1;
+      // Always show duty, default if missing
+      let duty = (item.duty !== undefined && item.duty !== null && item.duty !== '') ? item.duty : defaultDuty;
+      return { ...item, score, duty, debug: { desc, tokens, brand, category } };
     })
     .filter(item => item.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, maxResults);
   if (debug) {
     console.log('\n[DEBUG] Query tokens:', tokens);
+    console.log('[DEBUG] Parsed:', parsed);
     results.forEach((item, idx) => {
       console.log(`[DEBUG] Match #${idx + 1}: Score=${item.score} | HS=${item.hs_code} | Duty=${item.duty}`);
       console.log(`[DEBUG] Description: ${item.description}`);
       console.log(`[DEBUG] Matched tokens:`, tokens.filter(word => item.debug.desc.includes(word)));
+      if (brand) console.log(`[DEBUG] Brand match:`, item.debug.desc.includes(brand));
+      if (category) console.log(`[DEBUG] Category match:`, item.debug.desc.includes(category.toLowerCase()));
     });
   }
   return results;
 }
 
-function printComparison(query, uaeResults, usResults) {
+function printComparison(query, parsed, uaeResults, usResults) {
   console.log(`\nResults for: "${query}"`);
+  if (parsed) {
+    console.log('[PARSED]', parsed);
+  }
   console.log('='.repeat(60));
   console.log('UAE HS Code'.padEnd(15) + 'UAE Duty'.padEnd(12) + 'UAE Description');
   uaeResults.forEach(item => {
     console.log(
       (item.hs_code || '').padEnd(15) +
-      (item.duty || '').padEnd(12) +
+      (item.duty !== undefined && item.duty !== null ? String(item.duty) : '').padEnd(12) +
       (item.description || '').slice(0, 60)
     );
   });
@@ -43,7 +65,7 @@ function printComparison(query, uaeResults, usResults) {
   usResults.forEach(item => {
     console.log(
       (item.hs_code || '').padEnd(15) +
-      (item.duty || '').padEnd(12) +
+      (item.duty !== undefined && item.duty !== null ? String(item.duty) : '').padEnd(12) +
       (item.description || '').slice(0, 60)
     );
   });
@@ -55,7 +77,7 @@ function main() {
   const debug = args.includes('--debug');
   const filteredArgs = args.filter(arg => arg !== '--debug');
   if (filteredArgs.length === 0) {
-    console.log('Usage: node compare_hscode_cli.js <search terms> [--debug]');
+    console.log('Usage: node compare_hscode_cli.js <search terms|HS code> [--debug]');
     process.exit(1);
   }
   const query = filteredArgs.join(' ');
@@ -67,9 +89,145 @@ function main() {
   }
   const uaeData = JSON.parse(fs.readFileSync(uaePath, 'utf8'));
   const usData = JSON.parse(fs.readFileSync(usPath, 'utf8'));
-  const uaeResults = searchHSCode(query, uaeData, 5, debug);
-  const usResults = searchHSCode(query, usData, 5, debug);
-  printComparison(query, uaeResults, usResults);
+
+  // If the query is a valid HS code (all digits, length 6-8), do direct lookup
+  const hsCodePattern = /^\d{6,8}$/;
+  if (hsCodePattern.test(query)) {
+    const uaeMatch = uaeData.find(item => item.hs_code === query);
+    const usMatch = usData.find(item => item.hs_code === query);
+    console.log(`\nHS Code Lookup: ${query}`);
+    console.log('='.repeat(60));
+    if (uaeMatch) {
+      console.log(`[UAE] Description: ${uaeMatch.description}`);
+      console.log(`[UAE] Duty: ${uaeMatch.duty || '5%'}`);
+    } else {
+      console.log('[UAE] Not found');
+    }
+    console.log('-'.repeat(60));
+    if (usMatch) {
+      console.log(`[US] Description: ${usMatch.description}`);
+      console.log(`[US] Duty: ${usMatch.duty || ''}`);
+    } else {
+      console.log('[US] Not found');
+    }
+    console.log('='.repeat(60));
+    return;
+  }
+
+  // Otherwise, do normal keyword/category search
+  const parsed = parseQuery(query);
+
+  // Brand intelligence debug/info
+  let intelligenceResults = null;
+  if (parsed.brand && brandProducts[parsed.brand]) {
+    const brandInfo = brandProducts[parsed.brand];
+    console.log(`[INFO] Brand intelligence for '${parsed.brand}' (${brandInfo.country}):`);
+    brandInfo.products.forEach(prod => {
+      console.log(`  - ${prod.name}:`);
+      Object.entries(prod.hs_codes).forEach(([country, code]) => {
+        console.log(`      [${country.toUpperCase()}] HS Code: ${code}`);
+      });
+    });
+    // If a product type is detected, suggest the best HS code
+    let match = null;
+    if (parsed.model || parsed.type) {
+      match = brandInfo.products.find(prod =>
+        (parsed.model && prod.type && prod.type.includes(parsed.model)) ||
+        (parsed.type && prod.type && prod.type.includes(parsed.type)) ||
+        (parsed.model && prod.keywords && prod.keywords.includes(parsed.model)) ||
+        (parsed.type && prod.keywords && prod.keywords.includes(parsed.type))
+      );
+      if (match) {
+        console.log(`[SUGGEST] Best match for '${parsed.model || parsed.type}': ${match.name}`);
+        Object.entries(match.hs_codes).forEach(([country, code]) => {
+          console.log(`      [${country.toUpperCase()}] HS Code: ${code}`);
+        });
+        // Fetch and display the mapped HS code(s) and their descriptions/duties from the datasets
+        intelligenceResults = {
+          uae: uaeData.find(item => item.hs_code === match.hs_codes.uae),
+          us: usData.find(item => item.hs_code === match.hs_codes.us)
+        };
+      }
+    }
+    console.log('-'.repeat(60));
+  }
+
+  if (intelligenceResults && (intelligenceResults.uae || intelligenceResults.us)) {
+    console.log('[RESULT] Intelligence-based HS Code Match:');
+    if (intelligenceResults.uae) {
+      console.log(`[UAE] HS Code: ${intelligenceResults.uae.hs_code}`);
+      console.log(`[UAE] Description: ${intelligenceResults.uae.description}`);
+      console.log(`[UAE] Duty: ${intelligenceResults.uae.duty || '5%'}`);
+    } else {
+      console.log('[UAE] Not found');
+    }
+    console.log('-'.repeat(60));
+    if (intelligenceResults.us) {
+      console.log(`[US] HS Code: ${intelligenceResults.us.hs_code}`);
+      console.log(`[US] Description: ${intelligenceResults.us.description}`);
+      console.log(`[US] Duty: ${intelligenceResults.us.duty || ''}`);
+    } else {
+      console.log('[US] Not found');
+    }
+    console.log('='.repeat(60));
+    process.exit(0); // Hard exit to prevent any further output
+  }
+
+  // Only do fallback search if no intelligence match
+  // If a brand is detected and has known product types, restrict fallback to relevant keywords
+  let fallbackKeywords = [];
+  if (parsed.brand && brandProducts[parsed.brand]) {
+    fallbackKeywords = brandProducts[parsed.brand].products
+      .map(p => p.keywords)
+      .flat();
+  }
+
+  function smartFilter(results) {
+    if (fallbackKeywords.length === 0) return results;
+    // Only keep results whose description contains at least one relevant keyword
+    return results.filter(item => {
+      const desc = (item.description || '').toLowerCase();
+      return fallbackKeywords.some(kw => desc.includes(kw));
+    });
+  }
+
+  let uaeResults = searchHSCode(query, uaeData, parsed, 5, debug, '5%');
+  let usResults = searchHSCode(query, usData, parsed, 5, debug, '');
+  uaeResults = smartFilter(uaeResults);
+  usResults = smartFilter(usResults);
+
+  if (uaeResults.length === 0 && usResults.length === 0) {
+    console.log('No logical fallback HS code found for this brand/product.');
+    // Try related/synonym keywords for the product type/model
+    let relatedKeywords = [];
+    try {
+      const relatedMap = JSON.parse(fs.readFileSync(path.join(__dirname, 'related_keywords.json'), 'utf8'));
+      if (parsed.model && relatedMap[parsed.model]) {
+        relatedKeywords = relatedMap[parsed.model];
+      } else if (parsed.type && relatedMap[parsed.type]) {
+        relatedKeywords = relatedMap[parsed.type];
+      }
+    } catch (e) {}
+    if (relatedKeywords.length > 0) {
+      // Search for related keywords in the dataset
+      function relatedFilter(results) {
+        return results.filter(item => {
+          const desc = (item.description || '').toLowerCase();
+          return relatedKeywords.some(kw => desc.includes(kw));
+        });
+      }
+      let uaeRelated = relatedFilter(searchHSCode(query, uaeData, parsed, 20, false, '5%'));
+      let usRelated = relatedFilter(searchHSCode(query, usData, parsed, 20, false, ''));
+      if (uaeRelated.length > 0 || usRelated.length > 0) {
+        console.log('Closest alternative(s) based on related category/keywords:');
+        printComparison(query, parsed, uaeRelated.slice(0, 5), usRelated.slice(0, 5));
+        return;
+      }
+    }
+    return;
+  }
+
+  printComparison(query, parsed, uaeResults, usResults);
 }
 
 main();

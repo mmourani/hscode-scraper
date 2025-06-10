@@ -4,6 +4,9 @@
 This project provides a CLI-based tool for searching and comparing Harmonized System (HS) codes and import duties between the UAE and the US. It is designed to help importers/exporters, customs brokers, and researchers quickly identify the correct HS code and tariff for a given product in both countries.
 
 ## Current Features
+- **Intelligence-based brand/product HS code matching**: Uses a structured knowledge base to map brands (e.g., Quantum Systems, Silvus) and their products to the correct HS codes for multiple countries.
+- **Smart fallback and related keyword logic**: If no direct match is found, the tool suggests the closest alternative HS codes using synonyms and related product categories (e.g., for "drone": "UAV", "unmanned", "aircraft").
+- **Direct HS code lookup**: Enter an HS code to get the official description and duty from both UAE and US datasets.
 - **UAE HS code extraction** from Sharjah Customs PDF (hs_codes_uae.json)
 - **US HS code extraction** from USITC CSV (hs_codes_us.json)
 - **CLI tools** for searching and comparing HS codes and duties
@@ -16,7 +19,20 @@ This project provides a CLI-based tool for searching and comparing Harmonized Sy
 - US: `node extract_us_hts_csv.js` (requires hts_2024_basic_edition_csv.csv`)
 
 ### 2. Search & Compare
-- Compare HS codes and duties:
+- **Brand/product-aware search:**
+  ```sh
+  node compare_hscode_cli.js "quantum systems" drone --debug
+  node compare_hscode_cli.js "silvus" radio --debug
+  ```
+  The tool will use its intelligence layer to suggest the correct HS code(s) and show the official description/duty. If no direct match is found, it will suggest the closest alternatives using related keywords.
+
+- **Direct HS code lookup:**
+  ```sh
+  node compare_hscode_cli.js 85258300
+  ```
+  This will return the description and duty for the code from both UAE and US datasets.
+
+- **General search & compare:**
   ```sh
   node compare_hscode_cli.js <search terms> [--debug]
   ```
@@ -25,14 +41,18 @@ This project provides a CLI-based tool for searching and comparing Harmonized Sy
   node compare_hscode_cli.js radio --debug
   ```
 
-## What’s Next
-- **Product/brand-aware search:** Parse queries for brand/model/type, identify country of origin, and match to the closest HS code in both countries.
-- **Country of origin lookup:** Static map or web search for brand origin.
-- **Datasheet integration:** (Optional) Scrape or fetch product datasheets for more accurate matching.
-- **Customs/tariff calculator:** Estimate UAE customs fees based on duty and declared value.
-- **Multi-country expansion:** Add EU/other country HS code/tariff datasets.
+## Intelligence Layer & Fallback Logic
+- The tool uses `brand_products.json` to map brands and their products to the correct HS codes for each country.
+- If no direct match is found, it uses `related_keywords.json` to search for synonyms and related categories, suggesting the closest plausible HS codes.
+- If no logical fallback exists, the tool outputs a clear message and does not show irrelevant results.
+
+## Plan & Next Steps
+- **Expand brand intelligence:** Add more brands, products, and HS code mappings to `brand_products.json`.
+- **Enhance related keyword mapping:** Add more synonyms and related categories to `related_keywords.json` for smarter fallback.
+- **International HS code mapping:** Integrate official correlation tables for more accurate cross-country code suggestions.
 - **Web interface:** Build a user-friendly web app for search and comparison.
-- **Testing and validation:** More real-world queries and edge cases.
+- **Datasheet/product scraping:** (Optional) Integrate datasheet or product scraping for even more accurate matching.
+- **Testing and validation:** Continue to test with real-world queries and edge cases, and refine the intelligence and fallback logic.
 
 ## How to Contribute
 - Fork the repo, create a branch, and submit a pull request.
