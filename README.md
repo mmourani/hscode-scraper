@@ -88,19 +88,23 @@ This project provides a CLI-based tool for searching and comparing Harmonized Sy
 - All major country datasets (China, US, EU, UAE) are harmonized in the database, with code, description, duty, and extra_info fields.
 - US and UAE data now include compliance fields (e.g., ECCN, ITAR, TDRA approval) for key products.
 - Product mapping (brand_products.json) is used for brand/product-aware search and reporting.
-- Search/reporting scripts can now display all mapped products and accessories for a brand, with correct country-specific HS code and import/export info.
-- The system now supports robust compliance, regulatory, and multilingual queries.
+- A global product map (global_product_map.json) has been generated, covering all HS codes/categories in the world, making every product category queryable and reportable for any country.
+- Search/reporting scripts can now display all mapped products and accessories for a brand, or any product category, with correct country-specific HS code and import/export info.
+- The system now supports robust compliance, regulatory, and multilingual queries for any product or HS code.
+- Scripts: generate_global_product_map.py (builds the global map from the database), test_global_product_map.py (example queries/tests).
 
 ## Updated Action Plan
 
 ### Immediate Next Steps
-- **Expand product mapping:**
-  - Add all known products and accessories for each brand (e.g., Quantum Systems: Vector, Trinity, Twister, all accessories) to brand_products.json.
-  - Ensure each product has correct HS codes for each country, using the closest available code in each country’s tariff data.
+- **Global product mapping:**
+  - Use generate_global_product_map.py to create a comprehensive product map from all HS codes/categories in the database.
+  - Use this map for all search, reporting, and compliance queries.
+- **Expand brand/product mapping:**
+  - Continue to add all known products and accessories for each brand (e.g., Quantum Systems: Vector, Trinity, Twister, all accessories) to brand_products.json for brand-aware queries.
 - **Automate product-to-database sync:**
-  - Build a script to ensure all products in brand_products.json are also present in the hscodes table, with country-specific info.
+  - Use sync_product_map_to_db.py to ensure all products in brand_products.json are also present in the hscodes table, with country-specific info.
 - **Improve search/reporting:**
-  - Enhance scripts to always show all mapped products and accessories for a brand, with the best available info for each country.
+  - Enhance scripts to always show all mapped products and accessories for a brand, or any product category, with the best available info for each country.
 - **Continue compliance enrichment:**
   - Add more compliance fields (export/import permits, licensing, regulatory notes) to extra_info for key products/codes.
 - **Documentation and validation:**
