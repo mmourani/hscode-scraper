@@ -15,6 +15,25 @@ This project provides a CLI-based tool for searching and comparing Harmonized Sy
 
 ---
 
+## EU Access2Markets Scraper Debugging Status (June 2024)
+
+- The Puppeteer script (`scrape_eu_access2markets.js`) was updated to run in non-headless mode and capture a screenshot after attempting to load the results page.
+- The script currently fails with a TimeoutError while waiting for the selector `input#product`. This suggests the page structure may have changed, or a modal (such as a cookie or privacy prompt) is blocking the input.
+- A screenshot (`screenshot.png`) is generated after the page loads. This file should be checked to see the actual rendered state and debug why the selector is not found.
+
+**Next Steps / Action Items:**
+1. Open `screenshot.png` in the project directory to inspect the page state at the time of failure.
+2. Adjust the Puppeteer script to handle any new modals, popups, or changes in the page structure as seen in the screenshot.
+3. Re-run the script and repeat until the correct selectors are found and the data is extracted successfully.
+4. Once working, update the script and documentation accordingly.
+
+**Status:**
+- [x] Script updated to non-headless mode and screenshot capture
+- [x] Script executed, screenshot generated
+- [ ] Debug page state using screenshot
+- [ ] Update script to handle new page structure or modals
+- [ ] Verify successful data extraction
+
 ## Current Features
 - **Intelligence-based brand/product HS code matching**: Uses a structured knowledge base to map brands (e.g., Quantum Systems, Silvus) and their products to the correct HS codes for multiple countries.
 - **Smart fallback and related keyword logic**: If no direct match is found, the tool suggests the closest alternative HS codes using synonyms and related product categories (e.g., for "drone": "UAV", "unmanned", "aircraft").
@@ -64,19 +83,28 @@ This project provides a CLI-based tool for searching and comparing Harmonized Sy
 - If no logical UAE code is found, the tool searches the US dataset and recommends the US code if it is more valid and closer to reality for the product.
 - If no plausible code is found, the tool outputs a clear message and does not show irrelevant results.
 
-## Roadmap & Next Steps
+## Current State (June 2025)
 
-### Immediate Action Items
-- **Complete China HS code import:**
-  - Run the batch/resume scraper until all chapters and codes are imported.
-- **Enrich EU, US, and UAE data:**
-  - Research and scrape official customs/export/import rules for EU, US, and UAE to match the detail level of China (customs clearance, CIQ, export/import rules, etc.).
-  - Update scrapers/importers and database to store this information in a structured way.
-- **Enable cross-border trade rule queries:**
-  - Build logic to answer: “What are the export rules for [product/brand] from [country] to [country]?”
-  - Use brand_products.json and related mappings to link products/brands to HS codes and aggregate all export/import requirements for both origin and destination.
-- **Web interface:**
-  - Plan and begin migration to a user-friendly web app for search and comparison.
+- All major country datasets (China, US, EU, UAE) are harmonized in the database, with code, description, duty, and extra_info fields.
+- US and UAE data now include compliance fields (e.g., ECCN, ITAR, TDRA approval) for key products.
+- Product mapping (brand_products.json) is used for brand/product-aware search and reporting.
+- Search/reporting scripts can now display all mapped products and accessories for a brand, with correct country-specific HS code and import/export info.
+- The system now supports robust compliance, regulatory, and multilingual queries.
+
+## Updated Action Plan
+
+### Immediate Next Steps
+- **Expand product mapping:**
+  - Add all known products and accessories for each brand (e.g., Quantum Systems: Vector, Trinity, Twister, all accessories) to brand_products.json.
+  - Ensure each product has correct HS codes for each country, using the closest available code in each country’s tariff data.
+- **Automate product-to-database sync:**
+  - Build a script to ensure all products in brand_products.json are also present in the hscodes table, with country-specific info.
+- **Improve search/reporting:**
+  - Enhance scripts to always show all mapped products and accessories for a brand, with the best available info for each country.
+- **Continue compliance enrichment:**
+  - Add more compliance fields (export/import permits, licensing, regulatory notes) to extra_info for key products/codes.
+- **Documentation and validation:**
+  - Keep documentation and product mapping up to date as new products/countries are added.
 
 ### Ongoing/Planned
 - **Expand brand intelligence:** Add more brands, products, and HS code mappings to `brand_products.json`.
@@ -93,8 +121,11 @@ This project provides a CLI-based tool for searching and comparing Harmonized Sy
 - [x] Batch/resume China HS code scraper
 - [x] Rich database schema for customs/CIQ/extra info
 - [x] Importers for US, UAE, EU, China
+- [x] Enrich US, EU, UAE data to China-level detail (compliance, regulatory, extra_info)
+- [x] Brand/product-aware search and reporting
 - [ ] Complete China import (run scraper to finish)
-- [ ] Enrich EU, US, UAE data to China-level detail
+- [ ] Expand product mapping for all brands/countries
+- [ ] Automate product-to-database sync
 - [ ] Build cross-border trade rule query logic
 - [ ] Web app interface (planned)
 
