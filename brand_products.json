@@ -1,0 +1,52 @@
+{
+  "quantum systems": {
+    "country": "Germany",
+    "products": [
+      {
+        "name": "Trinity F90+ Drone",
+        "type": "drone",
+        "keywords": ["drone", "uav", "trinity", "f90+", "aircraft"],
+        "hs_codes": {
+          "germany": "85258300",
+          "uae": "88021100",
+          "us": "85258300"
+        }
+      },
+      {
+        "name": "Accessories (batteries, spares)",
+        "type": "accessory",
+        "keywords": ["accessory", "battery", "spare", "part"],
+        "hs_codes": {
+          "germany": "88073000",
+          "uae": "88073000",
+          "us": "88073000"
+        }
+      }
+    ]
+  },
+  "silvus": {
+    "country": "US",
+    "products": [
+      {
+        "name": "StreamCaster Radios",
+        "type": "radio",
+        "keywords": ["radio", "streamcaster", "transceiver", "wireless"],
+        "hs_codes": {
+          "us": "85269200",
+          "uae": "85269200",
+          "germany": "85269200"
+        }
+      },
+      {
+        "name": "Accessories (cables, antennas)",
+        "type": "accessory",
+        "keywords": ["accessory", "cable", "antenna", "spare", "part"],
+        "hs_codes": {
+          "us": "85291000",
+          "uae": "85291000",
+          "germany": "85291000"
+        }
+      }
+    ]
+  }
+}
