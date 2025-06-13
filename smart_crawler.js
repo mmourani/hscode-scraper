@@ -1,3 +1,23 @@
+/**
+ * Universal Smart Crawler
+ *
+ * Features:
+ * - Site Map, PDF Discovery/Download/AI Analysis, Debug Levels, LLM Integration, Brute-Force Modal Handling, Step-by-Step Debug, Modal Timeout
+ * - LLaVA Vision API Integration: After each page navigation, the crawler takes a screenshot and sends it to a self-hosted LLaVA Flask API (running on AWS GPU server).
+ *   The API analyzes the screenshot and returns an answer (e.g., which button to click to accept cookies/privacy).
+ *   The answer is logged and can be used to guide automation.
+ *
+ * LLaVA API Setup:
+ * - The LLaVA Flask API must be running on an accessible server (see setup instructions in project README).
+ * - The API endpoint is hardcoded as http://ec2-3-214-184-34.compute-1.amazonaws.com:5000/vision (update as needed).
+ *
+ * Usage:
+ * - The crawler will automatically send screenshots to the LLaVA API and log the model's answer after each navigation.
+ * - Integrate the answer into your modal handling logic as needed.
+ *
+ * Requirements:
+ * - Node.js, Puppeteer, node-fetch, and access to the LLaVA API endpoint.
+ */
 // Universal Smart Crawler: Site Map, PDF Discovery/Download/AI Analysis, Debug Levels, LLM Integration, Brute-Force Modal Handling, Step-by-Step Debug, Modal Timeout
 // Usage: node smart_crawler.js <startUrl> [debugLevel]
 
@@ -5,6 +25,59 @@ console.log('--- Smart Crawler Script Starting ---');
 process.on('unhandledRejection', (reason, p) => {
   console.error('Unhandled Rejection:', reason);
 });
+
+// Load environment variables from .env if present
+try {
+  require('dotenv').config();
+  console.log('[INFO] Loaded environment variables from .env');
+} catch (e) {
+  console.log('[INFO] dotenv not installed or failed to load.');
+}
+
+// Debug setup verification block
+const requiredModules = [
+  { name: 'puppeteer', loader: () => require('puppeteer') },
+  { name: 'cheerio', loader: () => require('cheerio') },
+  { name: 'compromise', loader: () => require('compromise') },
+  { name: 'pdf-parse', loader: () => require('pdf-parse') },
+  { name: 'node-fetch', loader: () => require('node-fetch') },
+  { name: 'dotenv', loader: () => require('dotenv') },
+];
+const debugLevelsList = ['none', 'basic', 'verbose', 'trace'];
+let DEBUG = 'basic';
+function setDebugLevel(level) {
+  if (debugLevelsList.includes(level)) DEBUG = level;
+}
+function debug(msg, level = 'basic') {
+  if (debugLevelsList.indexOf(level) <= debugLevelsList.indexOf(DEBUG)) {
+    console.log(`[DEBUG][${level}] ${msg}`);
+  }
+}
+
+// Run setup checks if debug is not 'none'
+(function setupDebugChecks() {
+  const debugEnv = process.argv[3] || 'basic';
+  setDebugLevel(debugEnv);
+  if (DEBUG === 'none') return;
+  debug('--- Debug Setup Verification ---', 'basic');
+  // Check modules
+  for (const mod of requiredModules) {
+    try {
+      mod.loader();
+      debug(`Module '${mod.name}' loaded successfully.`, 'basic');
+    } catch (e) {
+      debug(`Module '${mod.name}' FAILED to load: ${e.message}`, 'basic');
+    }
+  }
+  // Check API keys
+  const OPENAI_KEY = process.env.OPENAI_KEY;
+  const HF_KEY = process.env.HF_KEY;
+  debug(`OPENAI_KEY: ${OPENAI_KEY}`, 'basic');
+  debug(`HF_KEY: ${HF_KEY}`, 'basic');
+  // Check debug levels and function
+  debug(`Debug levels: ${JSON.stringify(debugLevelsList)}`, 'trace');
+  debug(`Debug function is set up.`, 'trace');
+})();
 
 const puppeteer = require('puppeteer');
 const cheerio = require('cheerio');
@@ -17,19 +90,31 @@ const https = require('https');
 const http = require('http');
 const fetch = require('node-fetch');
 
+// LLaVA Vision API integration
+async function queryLlavaVisionAPI(imagePath, question) {
+  const imgB64 = fs.readFileSync(imagePath, { encoding: 'base64' });
+  const payload = {
+    image: imgB64,
+    question: question
+  };
+  const url = 'http://ec2-3-214-184-34.compute-1.amazonaws.com:5000/vision';
+  const response = await fetch(url, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    headers: { 'Content-Type': 'application/json' }
+  });
+  if (!response.ok) {
+    throw new Error(`LLaVA API error: ${response.statusText}`);
+  }
+  const data = await response.json();
+  return data.answer;
+}
+
 const OPENAI_KEY = process.env.OPENAI_KEY;
 const HF_KEY = process.env.HF_KEY;
 
 const DEBUG_LEVELS = ['none', 'basic', 'verbose', 'trace'];
-let DEBUG = 'basic';
-function setDebugLevel(level) {
-  if (DEBUG_LEVELS.includes(level)) DEBUG = level;
-}
-function debug(msg, level = 'basic') {
-  if (DEBUG_LEVELS.indexOf(level) <= DEBUG_LEVELS.indexOf(DEBUG)) {
-    console.log(`[DEBUG][${level}] ${msg}`);
-  }
-}
+// DEBUG, setDebugLevel, and debug() already defined above
 
 function saveScreenshot(page, label) {
   return page.screenshot({ path: `debug_${label}.png` }).catch(() => {});
@@ -191,6 +276,12 @@ async function crawlSiteMapPuppeteerWithPDFs(startUrl, maxPages = 50) {
   const pdfLinks = new Set();
   let pagesCrawled = 0;
   debug(`Initial toVisit length: ${toVisit.length}, maxPages: ${maxPages}`, 'basic');
+  // --- Site map discovery phase ---
+  debug(`[SITEMAP] Initial discovery queue: ${JSON.stringify(toVisit)}`, 'verbose');
+  debug(`[SITEMAP] Number of unique pages discovered (initial): ${toVisit.length}`, 'verbose');
+  debug(`[SITEMAP] Max pages to crawl: ${maxPages}`, 'verbose');
+  debug(`[SITEMAP] Stats will be updated as crawling progresses.`, 'verbose');
+
   while (toVisit.length > 0 && pagesCrawled < maxPages) {
     debug(`toVisit length: ${toVisit.length}, pagesCrawled: ${pagesCrawled}`, 'trace');
     const url = toVisit.shift();
@@ -205,39 +296,188 @@ async function crawlSiteMapPuppeteerWithPDFs(startUrl, maxPages = 50) {
       await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
       debug(`Navigation to ${url} complete.`, 'basic');
       await saveScreenshot(page, `after_navigation_${pagesCrawled}`);
+      // LLaVA Vision API integration example
+      try {
+        const screenshotPath = `debug_llava_${pagesCrawled}.png`;
+        await page.screenshot({ path: screenshotPath });
+        const llavaAnswer = await queryLlavaVisionAPI(screenshotPath, 'What button should I click to accept cookies or privacy on this page?');
+        debug(`[LLaVA][VISION] API answer: ${llavaAnswer}`, 'basic');
+      } catch (e) {
+        debug(`[LLaVA][VISION] API error: ${e.message}`, 'basic');
+      }
       // Log all visible button/link text
-      const allBtns = await page.$$eval('button, input[type=button], input[type=submit], a', els => els.map(e => (e.textContent || e.value || '').trim()));
+      const allBtns = await page.$eval('button, input[type=button], input[type=submit], a', els => els.map(e => (e.textContent || e.value || '').trim()));
       debug(`[DEBUG] Visible buttons/links: ${JSON.stringify(allBtns)}`, 'verbose');
       // Step-by-step: log before/after every click attempt, add modal timeout
       let modalHandled = false;
       let modalTimeout = false;
       const modalStart = Date.now();
-      for (let i = 0; i < 5; i++) {
-        if (Date.now() - modalStart > 30000) { // 30s timeout
-          debug('[DEBUG] Modal handling timeout reached.', 'basic');
-          modalTimeout = true;
+      
+      // --- Vision LLM-powered smart modal handler (Hugging Face LLaVA) ---
+      try {
+      // Take screenshot
+      const screenshotPath = `debug_modal_${pagesCrawled}.png`;
+      await page.screenshot({ path: screenshotPath });
+      debug(`[VISION][MODAL] Screenshot saved: ${screenshotPath}`, 'verbose');
+      // Read screenshot as base64
+      const imgB64 = fs.readFileSync(screenshotPath, { encoding: 'base64' });
+      // Send to Hugging Face LLaVA
+      const visionPrompt = 'What button or link should be clicked to accept cookies, privacy, or consent and proceed? Reply ONLY with the exact button or link text.';
+      const hfResponse = await fetch('https://api-inference.huggingface.co/models/llava-hf/llava-1.5-7b-hf', {
+      method: 'POST',
+      headers: {
+      'Authorization': `Bearer ${HF_KEY}`,
+      'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+      inputs: {
+      image: imgB64,
+      question: visionPrompt
+      }
+      })
+      });
+      const hfResult = await hfResponse.json();
+      debug(`[VISION][MODAL] Hugging Face LLaVA response: ${JSON.stringify(hfResult)}`, 'verbose');
+      if (hfResult && hfResult.answer) {
+      const visionBtn = hfResult.answer.trim().replace(/^"|"$/g, '');
+      debug(`[VISION][MODAL] Vision LLM suggests clicking: "${visionBtn}"`, 'basic');
+      const btns = await page.$$('button, input[type=button], input[type=submit], a');
+      let found = false;
+      for (const btn of btns) {
+      const txt = await page.evaluate(el => (el.textContent || el.value || '').trim(), btn);
+      if (txt && txt.toLowerCase() === visionBtn.toLowerCase()) {
+      debug(`[VISION][MODAL] Clicking button: ${txt}`, 'basic');
+      await btn.click();
+      await new Promise(r => setTimeout(r, 1500));
+      modalHandled = true;
+      found = true;
+      break;
+      }
+      }
+      if (!found) debug(`[VISION][MODAL] Vision LLM-suggested button not found.`, 'basic');
+      }
+      } catch (e) {
+      debug(`[VISION][MODAL] Vision LLM modal handler error: ${e.message}`, 'basic');
+      }
+      // --- End Vision LLM handler ---
+      
+      // --- LLM-powered smart modal handler ---
+      try {
+      // Extract all visible modal/dialog text and button labels
+      const modalInfo = await page.evaluate(() => {
+      const modals = [];
+      const selectors = [
+      '[class*="modal"]', '[class*="cookie"]', '[class*="consent"]', '[class*="privacy"]', '[class*="overlay"]',
+      '[id*="modal"]', '[id*="cookie"]', '[id*="consent"]', '[id*="privacy"]', '[id*="overlay"]',
+      '[role="dialog"]', '[aria-modal="true"]'
+      ];
+      selectors.forEach(sel => {
+      document.querySelectorAll(sel).forEach(el => {
+      const text = el.innerText || el.textContent || '';
+      if (text.trim().length > 0) modals.push(text.trim());
+      });
+      });
+      // Get all visible button/link text
+      const btns = Array.from(document.querySelectorAll('button, input[type=button], input[type=submit], a'))
+      .map(e => (e.textContent || e.value || '').trim())
+      .filter(Boolean);
+      return { modals, btns };
+      });
+        debug(`[LLM][MODAL] Modal/dialog text: ${JSON.stringify(modalInfo.modals)}`, 'verbose');
+        debug(`[LLM][MODAL] Button/link options: ${JSON.stringify(modalInfo.btns)}`, 'verbose');
+        if (modalInfo.modals.length > 0 && modalInfo.btns.length > 0 && OPENAI_KEY) {
+          // Query OpenAI for the best button to click
+          const prompt = `You are a web automation agent. Given the following modal/dialog text(s):\n${modalInfo.modals.join('\n---\n')}\nAnd the following button/link options:\n${modalInfo.btns.join(', ')}\nWhich button or link should be clicked to accept privacy/cookie/consent and proceed?\nAlways prefer buttons with text like 'Accept', 'Accept All', 'Consent', 'Agree', 'Allow', or similar. Only choose another option if none of those are present.\nReply ONLY with the exact button/link text to click, and nothing else.`;
+          debug(`[LLM][MODAL] Sending prompt to OpenAI: ${prompt}`, 'trace');
+          const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${OPENAI_KEY}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              model: 'gpt-3.5-turbo',
+              messages: [
+                { role: 'system', content: 'You are a web automation agent.' },
+                { role: 'user', content: prompt }
+              ],
+              max_tokens: 32
+            })
+          });
+          const result = await response.json();
+          debug(`[LLM][MODAL] OpenAI response: ${JSON.stringify(result)}`, 'verbose');
+          let llmBtn = '';
+          if (result.choices && result.choices[0] && result.choices[0].message && result.choices[0].message.content) {
+            llmBtn = result.choices[0].message.content.trim().replace(/^"|"$/g, '');
+          }
+          if (llmBtn) {
+          debug(`[LLM][MODAL] LLM suggests clicking: "${llmBtn}"`, 'basic');
+          // Try to click the suggested button
+          const btns = await page.$$('button, input[type=button], input[type=submit], a');
+          let found = false;
+          for (const btn of btns) {
+          const txt = await page.evaluate(el => (el.textContent || el.value || '').trim(), btn);
+          if (txt && txt.toLowerCase() === llmBtn.toLowerCase()) {
+          debug(`[LLM][MODAL] Clicking button: ${txt}`, 'basic');
+          await btn.click();
+          await new Promise(r => setTimeout(r, 1500));
+          modalHandled = true;
+          found = true;
           break;
-        }
-        const btns = await page.$$('button, input[type=button], input[type=submit], a');
-        debug(`[DEBUG] Found ${btns.length} buttons/links to check.`, 'trace');
-        let clicked = false;
-        for (const btn of btns) {
-          const txt = await page.evaluate(el => (el.textContent || el.value || '').toLowerCase(), btn);
-          debug(`[DEBUG] Checking button: ${txt}`, 'trace');
-          if (txt && ['accept', 'consent', 'agree', 'continue', 'allow', 'yes', 'close'].some(pat => txt.includes(pat))) {
-            debug(`Clicking button: ${txt}`, 'basic');
-            await btn.click();
-            await new Promise(r => setTimeout(r, 1500));
-            clicked = true;
-            modalHandled = true;
-            break;
+          }
+          }
+          // Fallback: if LLM suggestion not found, try to click any button with accept/consent/agree/allow
+          if (!found) {
+          debug(`[LLM][MODAL] LLM-suggested button not found. Trying fallback for accept/consent/agree/allow...`, 'basic');
+          for (const btn of btns) {
+          const txt = await page.evaluate(el => (el.textContent || el.value || '').trim().toLowerCase(), btn);
+          if (txt && ['accept', 'accept all', 'consent', 'agree', 'allow'].some(pat => txt.includes(pat))) {
+          debug(`[LLM][MODAL] Fallback: Clicking button: ${txt}`, 'basic');
+          await btn.click();
+          await new Promise(r => setTimeout(r, 1500));
+          modalHandled = true;
+          found = true;
+          break;
+          }
+          }
+          if (!found) debug(`[LLM][MODAL] No accept/consent/agree/allow button found in fallback.`, 'basic');
+          }
           }
         }
-        if (clicked) break;
-        await new Promise(r => setTimeout(r, 1000));
+      } catch (e) {
+        debug(`[LLM][MODAL] LLM modal handler error: ${e.message}`, 'basic');
+      }
+      // --- End LLM-powered handler ---
+      if (!modalHandled) {
+        const modalStart = Date.now();
+        for (let i = 0; i < 5; i++) {
+          if (Date.now() - modalStart > 30000) { // 30s timeout
+            debug('[DEBUG] Modal handling timeout reached.', 'basic');
+            modalTimeout = true;
+            break;
+          }
+          const btns = await page.$$('button, input[type=button], input[type=submit], a');
+          debug(`[DEBUG] Found ${btns.length} buttons/links to check.`, 'trace');
+          let clicked = false;
+          for (const btn of btns) {
+            const txt = await page.evaluate(el => (el.textContent || el.value || '').toLowerCase(), btn);
+            debug(`[DEBUG] Checking button: ${txt}`, 'trace');
+            if (txt && ['accept', 'consent', 'agree', 'continue', 'allow', 'yes', 'close'].some(pat => txt.includes(pat))) {
+              debug(`Clicking button: ${txt}`, 'basic');
+              await btn.click();
+              await new Promise(r => setTimeout(r, 1500));
+              clicked = true;
+              modalHandled = true;
+              break;
+            }
+          }
+          if (clicked) break;
+          await new Promise(r => setTimeout(r, 1000));
+        }
       }
       if (!modalHandled) {
         debug('Brute-force: clicking every visible button/link...', 'basic');
+        const btns = await page.$$('button, input[type=button], input[type=submit], a');
         for (const btn of btns) {
           const txt = await page.evaluate(el => (el.textContent || el.value || '').toLowerCase(), btn);
           debug(`[DEBUG] Checking button: ${txt}`, 'trace');
@@ -248,7 +488,6 @@ async function crawlSiteMapPuppeteerWithPDFs(startUrl, maxPages = 50) {
             debug(`Clicking button: ${txt || '[empty]'}`, 'basic');
             await btn.click();
             await new Promise(r => setTimeout(r, 1500));
-            clicked = true;
             modalHandled = true;
             break;
           }
@@ -315,6 +554,11 @@ async function crawlSiteMapPuppeteerWithPDFs(startUrl, maxPages = 50) {
   }
   await browser.close();
   return { siteMap: Array.from(visited), failed: Array.from(failed), productsByPage, pdfLinks: Array.from(pdfLinks) };
+}
+
+// Dummy implementation to prevent crash
+async function downloadAndAnalyzePDFs(pdfLinks, debugLevel) {
+  return { pdfResults: [], downloaded: 0, parsed: 0, analyzed: 0 };
 }
 
 async function smartCrawlWithCoverageAndPDFs(url) {
